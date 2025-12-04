@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using AutoMapper;
 using DormitoryManagementSystem.API.Middlewares;
 using DormitoryManagementSystem.BUS.Implementations;
@@ -8,6 +9,7 @@ using DormitoryManagementSystem.DAO.Context;
 using DormitoryManagementSystem.DAO.Implementations;
 using DormitoryManagementSystem.DAO.Implements;
 using DormitoryManagementSystem.DAO.Interfaces;
+using DormitoryManagementSystem.DTO.Errors;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +57,41 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+
+options.Events = new JwtBearerEvents
+{
+    // 1. Xử lý khi chưa đăng nhập hoặc Token sai (Lỗi 401)
+    OnChallenge = context =>
+    {
+        // Bỏ qua phản hồi mặc định (trống trơn)
+        context.HandleResponse();
+
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.ContentType = "application/json";
+
+        var response = new ErrorResponse
+        {
+            StatusCode = 401,
+            Message = "Bạn chưa đăng nhập hoặc Token không hợp lệ."
+        };
+
+        return context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    },
+
+    // 2. Xử lý khi đăng nhập rồi nhưng không đủ quyền (Lỗi 403)
+    OnForbidden = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        context.Response.ContentType = "application/json";
+
+        var response = new ErrorResponse
+        {
+            StatusCode = 403,
+            Message = "Bạn không có quyền truy cập vào chức năng này."
+        };
+
+        return context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
 });
 builder.Services.AddAuthorization();
 // --- CẤU HÌNH SWAGGER CHUẨN ---
