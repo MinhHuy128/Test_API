@@ -4,7 +4,6 @@
     {
         public string BuildingName { get; set; } = string.Empty;
         public string Gender { get; set; } = string.Empty;
-        public int Floors { get; set; }
         public int OccupiedRooms { get; set; }
         public int TotalRooms { get; set; }
         public decimal OccupancyRate { get; set; }

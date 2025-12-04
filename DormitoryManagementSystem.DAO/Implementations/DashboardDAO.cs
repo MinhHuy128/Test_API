@@ -3,64 +3,70 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
+using DormitoryManagementSystem.DAO.Context;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Dashboard;
-// Import namespace chứa DbContext của bạn, ví dụ:
-// using DormitoryManagementSystem.Infrastructure.Data; 
+using DormitoryManagementSystem.Entity; // Namespace chứa các Entity bạn cung cấp
+using Microsoft.EntityFrameworkCore;
 
 namespace DormitoryManagementSystem.DAO.Implements
 {
     public class DashboardDAO : IDashboardDAO
     {
-        private readonly DormitoryContext _context; // Thay bằng tên DbContext thật của bạn
+        private readonly PostgreDbContext _context; // Đổi tên này theo Context của bạn
 
-        public DashboardDAO(DormitoryContext context)
+        public DashboardDAO(PostgreDbContext context)
         {
             _context = context;
         }
 
+        // 1. Lấy thống kê chi tiết từng tòa nhà
         public async Task<List<BuildingKpiDTO>> GetBuildingStatsAsync()
         {
-            // Truy vấn Group By ngay tại Database
             return await _context.Buildings
+                .AsNoTracking()
                 .Select(b => new BuildingKpiDTO
                 {
-                    BuildingName = b.BuildingName,
-                    Gender = b.Gender,
-                    // Giả sử mỗi tòa nhà có list Rooms
+                    BuildingName = b.Buildingname,
+                    Gender = b.Gendertype ?? "Mixed", // Xử lý null
+                    // Giả sử: TotalRooms ở đây là tổng số Giường (Capacity) để tính occupancy rate
                     TotalRooms = b.Rooms.Sum(r => r.Capacity),
-                    OccupiedRooms = b.Rooms.Sum(r => r.CurrentOccupancy),
-                    Floors = b.Floors // Hoặc tính toán nếu không có trường này
+                    // OccupiedRooms là tổng số người đang ở
+                    OccupiedRooms = b.Rooms.Sum(r => r.Currentoccupancy ?? 0),
                 })
                 .ToListAsync();
         }
 
+        // 2. Lấy KPI tổng quan (4-6 ô số trên cùng)
         public async Task<DashboardKpiDTO> GetGeneralKpiAsync(string? buildingFilter, DateTime from, DateTime to)
         {
-            // Lọc phòng theo building
+            // Query cơ sở cho Room
             var roomQuery = _context.Rooms.AsQueryable();
+
+            // Nếu có lọc theo tòa nhà
             if (!string.IsNullOrEmpty(buildingFilter) && !buildingFilter.ToLower().StartsWith("tất cả"))
             {
-                roomQuery = roomQuery.Where(r => r.Building.BuildingName.Contains(buildingFilter));
+                roomQuery = roomQuery.Where(r => r.Building.Buildingname.Contains(buildingFilter));
             }
 
             var totalRooms = await roomQuery.CountAsync();
-            // Phòng coi là full nếu occupancy >= capacity
-            var occupiedRooms = await roomQuery.CountAsync(r => r.CurrentOccupancy >= r.Capacity);
+            // Phòng được coi là Full nếu số người ở >= Sức chứa
+            var occupiedRooms = await roomQuery.CountAsync(r => (r.Currentoccupancy ?? 0) >= r.Capacity);
 
-            // Tính toán doanh thu và hợp đồng
-            // Lưu ý: Logic lọc theo Building cho Contract/Payment phức tạp hơn nếu DB không map trực tiếp
-            // Ở đây tôi viết query mẫu đơn giản
-
+            // Tính doanh thu trong khoảng thời gian
             var payments = await _context.Payments
-                .Where(p => p.PaymentDate >= from && p.PaymentDate <= to)
-                .SumAsync(p => p.PaymentAmount);
+                .AsNoTracking()
+                .Where(p => p.Paymentdate >= from && p.Paymentdate <= to)
+                .SumAsync(p => p.Paymentamount);
 
+            // Đếm hợp đồng đang chờ duyệt
             var pendingContracts = await _context.Contracts
+                .AsNoTracking()
                 .CountAsync(c => c.Status == "Pending" || c.Status == "AwaitingApproval");
 
+            // Đếm vi phạm chưa xử lý
             var openViolations = await _context.Violations
+                .AsNoTracking()
                 .CountAsync(v => v.Status != "Closed" && v.Status != "Resolved");
 
             return new DashboardKpiDTO
@@ -74,109 +80,142 @@ namespace DormitoryManagementSystem.DAO.Implements
             };
         }
 
+        // 3. Lấy dữ liệu vẽ biểu đồ
         public async Task<DashboardChartsDTO> GetChartDataAsync(string? buildingFilter, DateTime from, DateTime to)
         {
             var chartData = new DashboardChartsDTO();
 
-            // 1. Pie Chart Data
-            var roomQuery = _context.Rooms.AsQueryable();
+            // --- Biểu đồ Tròn (Pie Chart) ---
+            var roomQuery = _context.Rooms.AsNoTracking();
             if (!string.IsNullOrEmpty(buildingFilter) && !buildingFilter.ToLower().StartsWith("tất cả"))
             {
-                roomQuery = roomQuery.Where(r => r.Building.BuildingName.Contains(buildingFilter));
+                roomQuery = roomQuery.Where(r => r.Building.Buildingname.Contains(buildingFilter));
             }
 
-            chartData.OccupiedCount = await roomQuery.CountAsync(r => r.CurrentOccupancy >= r.Capacity);
-            chartData.AvailableCount = await roomQuery.CountAsync(r => r.CurrentOccupancy < r.Capacity);
+            chartData.OccupiedCount = await roomQuery.CountAsync(r => (r.Currentoccupancy ?? 0) >= r.Capacity);
+            chartData.AvailableCount = await roomQuery.CountAsync(r => (r.Currentoccupancy ?? 0) < r.Capacity);
 
-            // 2. Bar Chart Data (Occupancy by Building)
+            // --- Biểu đồ Cột (Bar Chart) - Thống kê theo Tòa nhà ---
+            // Chỉ lấy Top 10 tòa nhà nếu quá nhiều
             chartData.OccupancyByBuilding = await _context.Buildings
+                .AsNoTracking()
                 .Select(b => new OccupancyByBuildingDTO
                 {
-                    Building = b.BuildingName,
-                    Occupied = b.Rooms.Sum(r => r.CurrentOccupancy),
+                    Building = b.Buildingname,
+                    Occupied = b.Rooms.Sum(r => r.Currentoccupancy ?? 0),
                     Capacity = b.Rooms.Sum(r => r.Capacity)
                 })
                 .OrderBy(x => x.Building)
                 .ToListAsync();
 
-            // 3. Line Chart (Contracts by week) - Xử lý phía client hoặc memory một chút do Group By Date phức tạp trong EF Core tùy DB Provider
-            var contracts = await _context.Contracts
-                .Where(c => c.CreatedDate >= from && c.CreatedDate <= to)
-                .Select(c => c.CreatedDate)
+            // --- Biểu đồ Đường (Line Chart) - Xu hướng Hợp đồng ---
+            // Lưu ý: GroupBy Date/Week trong EF Core đôi khi lỗi translation tùy DB Provider.
+            // Giải pháp an toàn: Lấy list ngày về RAM rồi group (vì số lượng record trong 1 tháng không quá lớn).
+            var contractDates = await _context.Contracts
+                .AsNoTracking()
+                .Where(c => c.Createddate >= from && c.Createddate <= to)
+                .Select(c => c.Createddate)
                 .ToListAsync();
 
-            chartData.ContractsByWeek = contracts
-                .GroupBy(d => ISOWeek.GetWeekOfYear(d))
+            chartData.ContractsByWeek = contractDates
+                .Where(d => d.HasValue) // Lọc null
+                .GroupBy(d => ISOWeek.GetWeekOfYear(d.Value))
                 .Select(g => new ContractByWeekDTO
                 {
                     Week = $"Tuần {g.Key}",
                     Count = g.Count()
                 })
+                .OrderBy(x => x.Week)
                 .ToList();
 
             return chartData;
         }
 
+        // 4. Cảnh báo Thanh toán (Quá hạn hoặc trạng thái Late)
         public async Task<List<AlertDTO>> GetPaymentAlertsAsync()
         {
-            // Lấy 3 hóa đơn quá hạn gần nhất
-            var limitDate = DateTime.Now.AddDays(-30);
+            var thirtyDaysAgo = DateTime.Now.AddDays(-30);
+
             return await _context.Payments
-                .Include(p => p.Contract)
-                .Where(p => p.PaymentStatus == "Late" || (p.PaymentStatus != "Paid" && p.PaymentDate < limitDate))
-                .OrderByDescending(p => p.PaymentDate)
-                .Take(3)
+                .AsNoTracking()
+                .Include(p => p.Contract).ThenInclude(c => c.Student) // Join bảng để lấy tên SV
+                .Where(p => p.Paymentstatus == "Late" ||
+                           (p.Paymentstatus != "Paid" && p.Paymentdate < thirtyDaysAgo))
+                .OrderByDescending(p => p.Paymentdate)
+                .Take(5) // Lấy top 5
                 .Select(p => new AlertDTO
                 {
                     Type = "Thanh toán",
-                    Message = $"Hóa đơn {p.PaymentID} của {p.Contract.StudentName} đang quá hạn.",
-                    Date = p.PaymentDate
+                    Message = $"Hóa đơn {p.Paymentid} của {p.Contract.Student.Fullname} chưa thanh toán.",
+                    Date = p.Paymentdate ?? DateTime.Now
                 })
                 .ToListAsync();
         }
 
+        // 5. Cảnh báo Vi phạm (Mới nhất chưa xử lý)
         public async Task<List<AlertDTO>> GetViolationAlertsAsync()
         {
             return await _context.Violations
-               .Where(v => v.Status != "Closed" && v.Status != "Resolved")
-               .OrderByDescending(v => v.ViolationDate)
-               .Take(3)
-               .Select(v => new AlertDTO
-               {
-                   Type = "Vi phạm",
-                   Message = $"{v.StudentName}: {v.ViolationType}",
-                   Date = v.ViolationDate
-               })
-               .ToListAsync();
+                .AsNoTracking()
+                .Include(v => v.Student) // Join bảng Student
+                .Where(v => v.Status != "Closed" && v.Status != "Resolved")
+                .OrderByDescending(v => v.Violationdate)
+                .Take(5)
+                .Select(v => new AlertDTO
+                {
+                    Type = "Vi phạm",
+                    Message = $"{(v.Student != null ? v.Student.Fullname : "Unknown")}: {v.Violationtype}",
+                    Date = v.Violationdate ?? DateTime.Now
+                })
+                .ToListAsync();
         }
 
-        public async Task<List<ActivityDTO>> GetRecentActivitiesAsync(int limit)
-        {
-            // Query union 3 bảng là khá phức tạp trong EF Core thuần
-            // Cách tốt nhất là query top (limit) của từng bảng rồi merge in-memory tại BUS
-            // Tại DAO ta chỉ cung cấp method lấy riêng lẻ hoặc raw
-            // Ở đây tôi demo cách lấy riêng lẻ để BUS gộp
-            return new List<ActivityDTO>(); // Sẽ xử lý logic gộp ở BUS hoặc viết Stored Procedure
-        }
-
-        // Helper để lấy raw activities cho BUS xử lý
+        // 6. Helper: Lấy hoạt động Hợp đồng gần đây
         public async Task<List<ActivityDTO>> GetRecentContractsAsync(int limit)
         {
-            return await _context.Contracts.OrderByDescending(c => c.CreatedDate).Take(limit)
-               .Select(c => new ActivityDTO { Time = c.CreatedDate, Description = $"Hợp đồng mới: {c.StudentName}" })
-               .ToListAsync();
+            return await _context.Contracts
+                .AsNoTracking()
+                .Include(c => c.Student)
+                .OrderByDescending(c => c.Createddate)
+                .Take(limit)
+                .Select(c => new ActivityDTO
+                {
+                    Time = c.Createddate ?? DateTime.Now,
+                    Description = $"Hợp đồng mới: {c.Student.Fullname} - Phòng {c.Roomid}"
+                })
+                .ToListAsync();
         }
+
+        // 7. Helper: Lấy hoạt động Thanh toán gần đây
         public async Task<List<ActivityDTO>> GetRecentPaymentsAsync(int limit)
         {
-            return await _context.Payments.OrderByDescending(c => c.PaymentDate).Take(limit)
-               .Select(c => new ActivityDTO { Time = c.PaymentDate, Description = $"Thanh toán: {c.PaymentID}" })
-               .ToListAsync();
+            return await _context.Payments
+                .AsNoTracking()
+                .Include(p => p.Contract)
+                .OrderByDescending(p => p.Paymentdate)
+                .Take(limit)
+                .Select(p => new ActivityDTO
+                {
+                    Time = p.Paymentdate ?? DateTime.Now,
+                    Description = $"Thanh toán: {p.Paymentamount:N0} VNĐ ({p.Paymentstatus})"
+                })
+                .ToListAsync();
         }
+
+        // 8. Helper: Lấy hoạt động Vi phạm gần đây
         public async Task<List<ActivityDTO>> GetRecentViolationsAsync(int limit)
         {
-            return await _context.Violations.OrderByDescending(c => c.ViolationDate).Take(limit)
-               .Select(c => new ActivityDTO { Time = c.ViolationDate, Description = $"Vi phạm: {c.ViolationType}" })
-               .ToListAsync();
+            return await _context.Violations
+                .AsNoTracking()
+                .Include(v => v.Student)
+                .OrderByDescending(v => v.Violationdate)
+                .Take(limit)
+                .Select(v => new ActivityDTO
+                {
+                    Time = v.Violationdate ?? DateTime.Now,
+                    Description = $"Vi phạm: {v.Violationtype} ({v.Status})"
+                })
+                .ToListAsync();
         }
     }
 }

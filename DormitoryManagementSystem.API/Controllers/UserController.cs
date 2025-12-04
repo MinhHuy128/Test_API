@@ -48,7 +48,7 @@ namespace DormitoryManagementSystem.API.Controllers
             }
         }
 
-        [HttpGet]
+        [HttpGet("user")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllUsers([FromQuery] string? search)
         {
@@ -57,7 +57,7 @@ namespace DormitoryManagementSystem.API.Controllers
         }
 
 
-        [HttpPost]
+        [HttpPost("user")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateUser([FromBody] UserCreateDTO dto)
         {
