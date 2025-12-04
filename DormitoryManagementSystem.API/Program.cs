@@ -1,5 +1,6 @@
 using System.Text;
 using AutoMapper;
+using DormitoryManagementSystem.API.Middlewares;
 using DormitoryManagementSystem.BUS.Implementations;
 using DormitoryManagementSystem.BUS.Implements;
 using DormitoryManagementSystem.BUS.Interfaces;
@@ -137,6 +138,8 @@ builder.Services.AddScoped<IDashboardBUS, DashboardBUS>();
 
 var app = builder.Build();
 
+// Xử lí lỗi toàn cục
+app.UseMiddleware<GlobalExceptionMiddleware>();
 // Pipeline
 app.UseSwagger();
 app.UseSwaggerUI();
