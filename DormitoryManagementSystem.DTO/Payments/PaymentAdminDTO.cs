@@ -17,12 +17,12 @@ namespace DormitoryManagementSystem.DTO.Payments
         public string RoomName { get; set; } = string.Empty;
 
 
-        // Thông tin Hóa đơn
+        // bill
 
         public int BillMonth { get; set; }
 
         public decimal PaymentAmount { get; set; }
-        public string PaymentStatus { get; set; } = string.Empty; // Paid, Unpaid
+        public string PaymentStatus { get; set; } = string.Empty; 
         public string PaymentMethod { get; set; } = string.Empty;
         public DateTime? PaymentDate { get; set; }
     }

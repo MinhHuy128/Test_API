@@ -4,9 +4,9 @@
     {
         public string ContractID { get; set; } = string.Empty;
         public string StudentID { get; set; } = string.Empty;
-        public string StudentName { get; set; } = string.Empty; // Bonus: Nên map tên SV sang để hiển thị
+        public string StudentName { get; set; } = string.Empty;
         public string RoomID { get; set; } = string.Empty;
-        public string RoomNumber { get; set; } = string.Empty; // Bonus: Map số phòng
+        public string RoomNumber { get; set; } = string.Empty; 
         public string? StaffUserID { get; set; }
         public DateOnly StartTime { get; set; }
         public DateOnly EndTime { get; set; }

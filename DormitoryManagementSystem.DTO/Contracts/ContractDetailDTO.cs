@@ -8,11 +8,11 @@ namespace DormitoryManagementSystem.DTO.Contracts
 {
     public class ContractDetailDTO
     {
-        //thông tin hợp đồng
+        //hợp đồng
         public string ContractID { get; set; } = string.Empty;
         public DateTime StartTime { get; set; }
         public DateTime EndTime { get; set; }
-        public string Status { get; set; } = string.Empty; // Active/Expired
+        public string Status { get; set; } = string.Empty; 
         //public DateTime CreatedDate { get; set; }
 
         //Thông tin sinh viên

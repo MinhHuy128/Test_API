@@ -8,7 +8,7 @@ namespace DormitoryManagementSystem.DTO.News
 {
     public class NewsSummaryDTO
     {
-        public string NewsID { get; set; } = string.Empty; // Cần ID để khi bấm vào biết là xem tin nào
+        public string NewsID { get; set; } = string.Empty; 
         public string Title { get; set; } = string.Empty;
         public DateTime PublishedDate { get; set; }
     }

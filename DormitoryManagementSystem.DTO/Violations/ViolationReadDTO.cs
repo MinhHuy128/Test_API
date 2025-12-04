@@ -4,7 +4,7 @@
     {
         public string ViolationID { get; set; } = string.Empty;
         public string? StudentID { get; set; }
-        public string? StudentName { get; set; } // Nên join bảng Student để lấy tên hiển thị cho rõ
+        public string? StudentName { get; set; } 
         public string RoomID { get; set; } = string.Empty;
         public string? ReportedByUserID { get; set; }
         public string ViolationType { get; set; } = string.Empty;

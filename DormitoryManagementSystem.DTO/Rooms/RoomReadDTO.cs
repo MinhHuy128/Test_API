@@ -12,7 +12,8 @@
         public bool AllowCooking { get; set; }
         public bool AirConditioner { get; set; }
 
-        // Computed Property (Tính toán sẵn giúp Frontend)
+        
+
         public bool IsFull => CurrentOccupancy >= Capacity;
         public int AvailableSlots => Capacity - CurrentOccupancy;
     }

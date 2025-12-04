@@ -8,7 +8,7 @@ namespace DormitoryManagementSystem.DTO.Rooms
 {
     public class RoomPriceDTO
     {
-        public string DisplayText { get; set; } = string.Empty; // VD: "Dưới 1 triệu"
+        public string DisplayText { get; set; } = string.Empty; 
         public decimal? MinPrice { get; set; }
         public decimal? MaxPrice { get; set; }
     }
