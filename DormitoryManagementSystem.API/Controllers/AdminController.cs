@@ -29,7 +29,7 @@ namespace DormitoryManagementSystem.API.Controllers
             return Ok(admins.OrderBy(a => a.UserID).ToList());
         }
 
-        [HttpGet("{id}")]
+        [HttpGet("admins/{id}")]
         public async Task<IActionResult> GetAdminById(string id)
         {
             var admin = await _adminBUS.GetAdminByIDAsync(id);
@@ -40,7 +40,7 @@ namespace DormitoryManagementSystem.API.Controllers
             return Ok(admin);
         }
 
-        [HttpPost]
+        [HttpPost("admins")]
         public async Task<IActionResult> CreateAdmin([FromBody] AdminCreateDTO dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -61,7 +61,7 @@ namespace DormitoryManagementSystem.API.Controllers
 
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("admins/{id}")]
         public async Task<IActionResult> UpdateAdmin(string id, [FromBody] AdminUpdateDTO dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -81,7 +81,7 @@ namespace DormitoryManagementSystem.API.Controllers
             }
         }
 
-        [HttpDelete("{id}")]
+        [HttpDelete("admins/{id}")]
         public async Task<IActionResult> DeleteAdmin(string id)
         {
             try

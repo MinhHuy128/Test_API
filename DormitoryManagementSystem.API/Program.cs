@@ -1,9 +1,12 @@
 using System.Text;
 using AutoMapper;
+using DormitoryManagementSystem.API.Middlewares;
 using DormitoryManagementSystem.BUS.Implementations;
+using DormitoryManagementSystem.BUS.Implements;
 using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Context;
 using DormitoryManagementSystem.DAO.Implementations;
+using DormitoryManagementSystem.DAO.Implements;
 using DormitoryManagementSystem.DAO.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +120,8 @@ builder.Services.AddScoped<IPaymentDAO, PaymentDAO>();
 builder.Services.AddScoped<IViolationDAO, ViolationDAO>();
 builder.Services.AddScoped<IAdminDAO, AdminDAO>();
 builder.Services.AddScoped<IStatisticsDAO, StatisticsDAO>();
+builder.Services.AddScoped<IDashboardDAO, DashboardDAO>();
+
 
 // BUSs
 builder.Services.AddScoped<IUserBUS, UserBUS>();
@@ -129,9 +134,12 @@ builder.Services.AddScoped<IPaymentBUS, PaymentBUS>();
 builder.Services.AddScoped<IViolationBUS, ViolationBUS>();
 builder.Services.AddScoped<IAdminBUS, AdminBUS>();
 builder.Services.AddScoped<IStatisticsBUS, StatisticsBUS>();
+builder.Services.AddScoped<IDashboardBUS, DashboardBUS>();
 
 var app = builder.Build();
 
+// Xử lí lỗi toàn cục
+app.UseMiddleware<GlobalExceptionMiddleware>();
 // Pipeline
 app.UseSwagger();
 app.UseSwaggerUI();
