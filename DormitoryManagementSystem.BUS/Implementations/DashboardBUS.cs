@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using DormitoryManagementSystem.BUS.Interfaces;
+﻿using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Dashboard;
 
@@ -10,81 +6,46 @@ namespace DormitoryManagementSystem.BUS.Implements
 {
     public class DashboardBUS : IDashboardBUS
     {
-        private readonly IDashboardDAO _dashboardDAO;
-
-        public DashboardBUS(IDashboardDAO dashboardDAO)
-        {
-            _dashboardDAO = dashboardDAO;
-        }
+        private readonly IDashboardDAO _dao;
+        public DashboardBUS(IDashboardDAO dao) => _dao = dao;
 
         public async Task<BuildingKpiResponseDTO> GetBuildingKpisAsync()
         {
-            var buildings = await _dashboardDAO.GetBuildingStatsAsync();
-
+            var buildings = await _dao.GetBuildingStatsAsync();
             foreach (var b in buildings)
-            {
-                b.OccupancyRate = b.TotalRooms == 0
-                    ? 0
-                    : Math.Round((decimal)b.OccupiedRooms * 100 / b.TotalRooms, 2);
-            }
-
-            return new BuildingKpiResponseDTO
-            {
-                Buildings = buildings.OrderByDescending(k => k.OccupancyRate).ToList()
-            };
+                b.OccupancyRate = b.TotalRooms == 0 ? 0 : Math.Round((decimal)b.OccupiedRooms * 100 / b.TotalRooms, 2);
+            return new BuildingKpiResponseDTO { Buildings = buildings.OrderByDescending(k => k.OccupancyRate).ToList() };
         }
 
-        public async Task<DashboardKpiDTO> GetDashboardKpisAsync(string? building, DateTime? from, DateTime? to)
-        {
-            var dateFrom = from ?? new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-            var dateTo = to ?? DateTime.Now;
+        public async Task<DashboardKpiDTO> GetDashboardKpisAsync(string? b, DateTime? from, DateTime? to) =>
+            await _dao.GetGeneralKpiAsync(b, from ?? new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1), to ?? DateTime.Now);
 
-            return await _dashboardDAO.GetGeneralKpiAsync(building, dateFrom, dateTo);
-        }
+        public async Task<DashboardChartsDTO> GetDashboardChartsAsync(string? b, DateTime? from, DateTime? to) =>
+            await _dao.GetChartDataAsync(b, from ?? new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1), to ?? DateTime.Now);
 
-        public async Task<DashboardChartsDTO> GetDashboardChartsAsync(string? building, DateTime? from, DateTime? to)
-        {
-            var dateFrom = from ?? new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-            var dateTo = to ?? DateTime.Now;
-
-            return await _dashboardDAO.GetChartDataAsync(building, dateFrom, dateTo);
-        }
-
-        // --- SỬA LỖI Ở ĐÂY: Chạy tuần tự (await từng cái một) ---
         public async Task<List<AlertDTO>> GetAlertsAsync()
         {
-            // 1. Chạy query lấy Payment trước, chờ xong mới đi tiếp
-            var paymentAlerts = await _dashboardDAO.GetPaymentAlertsAsync();
+            // Chạy tuần tự để tránh lỗi DbContext (Concurrency Issue)
+            var paymentAlerts = await _dao.GetPaymentAlertsAsync();
+            var violationAlerts = await _dao.GetViolationAlertsAsync();
 
-            // 2. Sau đó mới chạy query lấy Violation
-            var violationAlerts = await _dashboardDAO.GetViolationAlertsAsync();
-
-            var allAlerts = new List<AlertDTO>();
-            allAlerts.AddRange(paymentAlerts);
-            allAlerts.AddRange(violationAlerts);
-
-            return allAlerts.OrderByDescending(a => a.Date).ToList();
+            var all = new List<AlertDTO>();
+            all.AddRange(paymentAlerts);
+            all.AddRange(violationAlerts);
+            return all.OrderByDescending(a => a.Date).ToList();
         }
 
-        // --- SỬA LỖI CẢ Ở ĐÂY LUÔN CHO CHẮC ---
         public async Task<List<ActivityDTO>> GetActivitiesAsync(int limit)
         {
             int safeLimit = Math.Clamp(limit, 5, 50);
+            // Chạy tuần tự
+            var c = await _dao.GetRecentContractsAsync(safeLimit);
+            var p = await _dao.GetRecentPaymentsAsync(safeLimit);
+            var v = await _dao.GetRecentViolationsAsync(safeLimit);
 
-            // Chạy tuần tự để tránh lỗi "Second operation started..."
-            var contracts = await _dashboardDAO.GetRecentContractsAsync(safeLimit);
-            var payments = await _dashboardDAO.GetRecentPaymentsAsync(safeLimit);
-            var violations = await _dashboardDAO.GetRecentViolationsAsync(safeLimit);
-
-            var allActivities = new List<ActivityDTO>();
-            allActivities.AddRange(contracts);
-            allActivities.AddRange(payments);
-            allActivities.AddRange(violations);
-
-            return allActivities
-                .OrderByDescending(a => a.Time)
-                .Take(safeLimit)
-                .ToList();
+            var all = new List<ActivityDTO>();
+            all.AddRange(c); all.AddRange(p); all.AddRange(v);
+            return all.OrderByDescending(a => a.Time).Take(safeLimit).ToList();
         }
     }
 }

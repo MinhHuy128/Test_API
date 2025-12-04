@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DormitoryManagementSystem.A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DormitoryManagementSystem.Mappings", "DormitoryManagementSystem.Mappings\DormitoryManagementSystem.Mappings.csproj", "{6EBF5A16-201A-411F-840B-AF7D67058673}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DormitoryManagementSystem.Utils", "DormitoryManagementSystem.Utils\DormitoryManagementSystem.Utils.csproj", "{F5D93CE6-8F76-38B7-5591-D54A672B967C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -45,6 +47,10 @@ Global
 		{6EBF5A16-201A-411F-840B-AF7D67058673}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6EBF5A16-201A-411F-840B-AF7D67058673}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6EBF5A16-201A-411F-840B-AF7D67058673}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F5D93CE6-8F76-38B7-5591-D54A672B967C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5D93CE6-8F76-38B7-5591-D54A672B967C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5D93CE6-8F76-38B7-5591-D54A672B967C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5D93CE6-8F76-38B7-5591-D54A672B967C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

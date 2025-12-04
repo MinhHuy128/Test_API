@@ -2,7 +2,9 @@
 using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Contracts;
+using DormitoryManagementSystem.DTO.SearchCriteria; // Criteria
 using DormitoryManagementSystem.Entity;
+using DormitoryManagementSystem.Utils;
 
 namespace DormitoryManagementSystem.BUS.Implementations
 {
@@ -11,284 +13,71 @@ namespace DormitoryManagementSystem.BUS.Implementations
         private readonly IContractDAO _contractDAO;
         private readonly IStudentDAO _studentDAO;
         private readonly IRoomDAO _roomDAO;
-        private readonly IUserDAO _userDAO;
         private readonly IMapper _mapper;
 
-        public ContractBUS(
-            IContractDAO contractDAO,
-            IStudentDAO studentDAO,
-            IRoomDAO roomDAO,
-            IUserDAO userDAO,
-            IMapper mapper)
+        public ContractBUS(IContractDAO contractDAO, IStudentDAO studentDAO, IRoomDAO roomDAO, IMapper mapper)
         {
             _contractDAO = contractDAO;
             _studentDAO = studentDAO;
             _roomDAO = roomDAO;
-            _userDAO = userDAO;
             _mapper = mapper;
         }
 
+        // ======================== GET METHODS ========================
+
         public async Task<IEnumerable<ContractReadDTO>> GetAllContractsAsync()
         {
-            IEnumerable<Contract> contracts = await _contractDAO.GetAllContractsAsync();
-            return _mapper.Map<IEnumerable<ContractReadDTO>>(contracts);
-        }
-
-        public async Task<IEnumerable<ContractReadDTO>> GetAllContractsIncludingInactivesAsync()
-        {
-            IEnumerable<Contract> contracts = await _contractDAO.GetAllContractsIncludingInactivesAsync();
-            return _mapper.Map<IEnumerable<ContractReadDTO>>(contracts);
+            var list = await _contractDAO.SearchContractsAsync(new ContractSearchCriteria());
+            return _mapper.Map<IEnumerable<ContractReadDTO>>(list);
         }
 
         public async Task<ContractReadDTO?> GetContractByIDAsync(string id)
         {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("Contract ID không thể để trống");
-
-            Contract? contract = await _contractDAO.GetContractByIDAsync(id);
-            if (contract == null) return null;
-
-            return _mapper.Map<ContractReadDTO>(contract);
+            var contract = await _contractDAO.GetContractByIDAsync(id);
+            return contract == null ? null : _mapper.Map<ContractReadDTO>(contract);
         }
 
         public async Task<IEnumerable<ContractReadDTO>> GetContractsByStudentIDAsync(string studentId)
         {
-            if (string.IsNullOrWhiteSpace(studentId))
-                throw new ArgumentException("Student ID không thể để trống");
-
-            IEnumerable<Contract> contracts = await _contractDAO.GetContractsByStudentIDAsync(studentId);
-            return _mapper.Map<IEnumerable<ContractReadDTO>>(contracts);
+            var list = await _contractDAO.SearchContractsAsync(new ContractSearchCriteria { StudentID = studentId });
+            return _mapper.Map<IEnumerable<ContractReadDTO>>(list);
         }
 
-        public async Task<ContractReadDTO?> GetActiveContractByStudentIDAsync(string studentId)
+        public async Task<IEnumerable<ContractReadDTO>> GetContractsAsync(string searchTerm)
         {
-            if (string.IsNullOrWhiteSpace(studentId))
-                throw new ArgumentException("Student ID không thể để trống");
-
-            Contract? contract = await _contractDAO.GetActiveContractByStudentIDAsync(studentId);
-            if (contract == null) return null;
-
-            return _mapper.Map<ContractReadDTO>(contract);
+            var list = await _contractDAO.SearchContractsAsync(new ContractSearchCriteria { SearchTerm = searchTerm });
+            return _mapper.Map<IEnumerable<ContractReadDTO>>(list);
         }
 
-        /* AddContract củ
-        public async Task<string> AddContractAsync(ContractCreateDTO dto)
+        public async Task<IEnumerable<ContractReadDTO>> GetContractsByMultiConditionAsync(ContractFilterDTO filter)
         {
-            Contract? existingContract = await _contractDAO.GetContractByIDAsync(dto.ContractID);
-            if (existingContract != null)
-                throw new InvalidOperationException($"Contract with ID {dto.ContractID} already exists.");
+            // Logic swap ngày nếu bị ngược
+            if (filter.FromDate.HasValue && filter.ToDate.HasValue && filter.FromDate > filter.ToDate)
+                (filter.FromDate, filter.ToDate) = (filter.ToDate, filter.FromDate);
 
-            if (dto.EndTime <= dto.StartTime)
-                throw new ArgumentException("End Date must be after Start Date.");
-
-            Student? student = await _studentDAO.GetStudentByIDAsync(dto.StudentID);
-            if (student == null)
-                throw new KeyNotFoundException($"Student with ID {dto.StudentID} not found.");
-
-            Contract? activeContract = await _contractDAO.GetActiveContractByStudentIDAsync(dto.StudentID);
-            if (activeContract != null)
-                throw new InvalidOperationException($"Student {dto.StudentID} already has an active contract in room {activeContract.Roomid}.");
-
-            if (!string.IsNullOrEmpty(dto.StaffUserID))
+            var criteria = new ContractSearchCriteria
             {
-                User? staff = await _userDAO.GetUserByIDAsync(dto.StaffUserID);
-                if (staff == null || staff.IsActive == false)
-                    throw new InvalidOperationException("Staff User is invalid or inactive.");
-            }
+                BuildingID = filter.BuildingID,
+                Status = filter.Status,
+                FromDate = filter.FromDate,
+                ToDate = filter.ToDate
+            };
 
-            Room? room = await _roomDAO.GetRoomByIDAsync(dto.RoomID);
-            if (room == null)
-                throw new KeyNotFoundException($"Room with ID {dto.RoomID} not found.");
-
-            if (room.Status != "Active")
-                throw new InvalidOperationException($"Room {dto.RoomID} is not Active (Status: {room.Status}).");
-
-            // Hợp đồng Pending không tăng occupancy nên có thể tạo ngay cả khi phòng đầy
-            if (dto.Status == "Active" && room.Currentoccupancy >= room.Capacity)
-                throw new InvalidOperationException($"Room {dto.RoomID} is full. Capacity: {room.Capacity}.");
-
-            Contract contractEntity = _mapper.Map<Contract>(dto);
-            contractEntity.Createddate = DateTime.Now;
-
-            await _contractDAO.AddContractAsync(contractEntity);
-
-            // Tăng occupancy khi hợp đồng là Active
-            if (contractEntity.Status == "Active")
-            {
-                room.Currentoccupancy += 1;
-                await _roomDAO.UpdateRoomAsync(room);
-            }
-
-            return contractEntity.Contractid;
-        }
-        */
-
-        public async Task<string> AddContractAsync(ContractCreateDTO dto, string staffuserID)
-        {
-            Contract? existingContract = await _contractDAO.GetContractByIDAsync(dto.ContractID);
-            if (existingContract != null)
-                throw new InvalidOperationException($"Hợp đồng với ID {dto.ContractID} đã tồn tại.");
-
-            if (dto.EndTime <= dto.StartTime)
-                throw new ArgumentException("Ngày kết thúc phải sau ngày bắt đầu.");
-
-            Student? student = await _studentDAO.GetStudentByIDAsync(dto.StudentID);
-            if (student == null)
-                throw new KeyNotFoundException($"Không có sinh viên với ID {dto.StudentID}.");
-
-            Contract? activeContract = await _contractDAO.GetActiveContractByStudentIDAsync(dto.StudentID);
-            if (activeContract != null)
-                throw new InvalidOperationException($"Sinh viên {dto.StudentID} đã có hợp đồng hoạt động trong phòng {activeContract.Roomid}.");
-
-            if (!string.IsNullOrEmpty(dto.StaffUserID))
-            {
-                User? staff = await _userDAO.GetUserByIDAsync(dto.StaffUserID);
-                if (staff == null || staff.IsActive == false)
-                    throw new InvalidOperationException("Tài khoản nhân viên không hợp lệ hoặc không hoạt động.");
-            }
-
-            Room? room = await _roomDAO.GetRoomByIDAsync(dto.RoomID);
-            if (room == null)
-                throw new KeyNotFoundException($"Không có phòng với ID {dto.RoomID}.");
-
-            if (room.Status != "Active")
-                throw new InvalidOperationException($"Phòng {dto.RoomID} không hoạt động (Trạng thái: {room.Status}).");
-
-            if (room.Currentoccupancy >= room.Capacity)
-                throw new InvalidOperationException($"Phòng {dto.RoomID} đã đầy. Sức chứa: {room.Capacity}.");
-
-            Contract contractEntity = _mapper.Map<Contract>(dto);
-            contractEntity.Createddate = DateTime.Now;
-            contractEntity.Staffuserid = staffuserID;
-
-            await _contractDAO.AddContractAsync(contractEntity);
-
-            // Increase occupancy when contract is Active
-            if (contractEntity.Status == "Active")
-            {
-                room.Currentoccupancy += 1;
-                await _roomDAO.UpdateRoomAsync(room);
-            }
-
-            return contractEntity.Contractid;
+            var list = await _contractDAO.SearchContractsAsync(criteria);
+            return _mapper.Map<IEnumerable<ContractReadDTO>>(list);
         }
 
-
-
-        public async Task UpdateContractAsync(string id, ContractUpdateDTO dto)
-        {
-            Contract? contractEntity = await _contractDAO.GetContractByIDAsync(id);
-            if (contractEntity == null)
-                throw new KeyNotFoundException($"Không có hợp đồng với ID {id}.");
-
-            if (dto.EndTime <= dto.StartTime)
-                throw new ArgumentException("Ngày kết thúc phải sau ngày bắt đầu.");
-
-            // Handle Logic if Room is Changed or Status is Changed
-            string oldRoomID = contractEntity.Roomid;
-            string newRoomID = dto.RoomID;
-            string oldStatus = contractEntity.Status ?? "Active";
-            string newStatus = dto.Status;
-
-            bool isRoomChanged = oldRoomID != newRoomID;
-            bool isStatusChanged = oldStatus != newStatus;
-
-            // Case A: Room Transfer (Moving from Old Room -> New Room)
-            if (isRoomChanged)
-            {
-                // Decrease occupancy in Old Room (if it was Active)
-                if (oldStatus == "Active")
-                {
-                    Room? oldRoom = await _roomDAO.GetRoomByIDAsync(oldRoomID);
-                    if (oldRoom != null && oldRoom.Currentoccupancy > 0)
-                    {
-                        oldRoom.Currentoccupancy -= 1;
-                        await _roomDAO.UpdateRoomAsync(oldRoom);
-                    }
-                }
-
-                // Increase occupancy in New Room (if new status is Active)
-                if (newStatus == "Active")
-                {
-                    Room? newRoom = await _roomDAO.GetRoomByIDAsync(newRoomID);
-                    if (newRoom == null) throw new KeyNotFoundException($"Không có phòng {newRoomID}.");
-
-                    if (newRoom.Currentoccupancy >= newRoom.Capacity)
-                        throw new InvalidOperationException($"Phòng {newRoomID} đã đầy.");
-
-                    newRoom.Currentoccupancy += 1;
-                    await _roomDAO.UpdateRoomAsync(newRoom);
-                }
-            }
-            // Case B: Same Room, but Status Changed
-            else if (isStatusChanged)
-            {
-                Room? currentRoom = await _roomDAO.GetRoomByIDAsync(oldRoomID);
-                if (currentRoom != null)
-                {
-                    if (oldStatus == "Active" && newStatus != "Active")
-                    {
-                        if (currentRoom.Currentoccupancy > 0)
-                            currentRoom.Currentoccupancy -= 1;
-                    }
-                    else if (oldStatus != "Active" && newStatus == "Active")
-                    {
-                        if (currentRoom.Currentoccupancy >= currentRoom.Capacity)
-                            throw new InvalidOperationException($"Phòng {currentRoom.Roomid} đã đầy.");
-                        currentRoom.Currentoccupancy += 1;
-                    }
-                    await _roomDAO.UpdateRoomAsync(currentRoom);
-                }
-            }
-
-            _mapper.Map(dto, contractEntity);
-            contractEntity.Contractid = id; 
-
-            await _contractDAO.UpdateContractAsync(contractEntity);
-        }
-
-        public async Task DeleteContractAsync(string id)
-        {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("Contract ID không thể để trống");
-
-            Contract? contract = await _contractDAO.GetContractByIDAsync(id);
-            if (contract == null)
-                throw new KeyNotFoundException($"Không có hợp đồng với ID {id}.");
-
-            if (contract.Status == "Active")
-            {
-                Room? room = await _roomDAO.GetRoomByIDAsync(contract.Roomid);
-                if (room != null && room.Currentoccupancy > 0)
-                {
-                    room.Currentoccupancy -= 1;
-                    await _roomDAO.UpdateRoomAsync(room);
-                }
-            }
-
-            // Soft delete via DAO (sets status to Terminated)
-            await _contractDAO.DeleteContractAsync(id);
-        }
-
-        //Student
-        // Lấy chi tiết hợp đồng đầy đủ bao gồm thông tin sinh viên và phòng
-        // Của thằng học sinh đó
         public async Task<ContractDetailDTO?> GetContractFullDetailAsync(string studentId)
         {
             var contract = await _contractDAO.GetContractDetailAsync(studentId);
-
-            if (contract == null) return null; 
+            if (contract == null) return null;
 
             return new ContractDetailDTO
             {
-                // Hợp đồng
                 ContractID = contract.Contractid,
                 StartTime = contract.Starttime.ToDateTime(TimeOnly.MinValue),
                 EndTime = contract.Endtime.ToDateTime(TimeOnly.MinValue),
-                Status = contract.Status,
-                //CreatedDate = contract.Createddate ?? DateTime.MinValue,
-
-                // Sinh viên 
+                Status = contract.Status ?? "N/A",
                 StudentID = contract.Studentid,
                 StudentName = contract.Student?.Fullname ?? "N/A",
                 Gender = contract.Student?.Gender ?? "N/A",
@@ -297,15 +86,13 @@ namespace DormitoryManagementSystem.BUS.Implementations
                 Email = contract.Student?.Email ?? "N/A",
                 CCCD = contract.Student?.Idcard ?? "N/A",
                 Address = contract.Student?.Address ?? "N/A",
-
-                // Phòng
                 RoomID = contract.Roomid,
                 RoomNumber = contract.Room?.Roomnumber ?? 0,
-                //Price = contract.Room?.Price ?? 0,
-                BuildingName = contract.Room?.Building?.Buildingname ?? "Unknown Building"
+                BuildingName = contract.Room?.Building?.Buildingname ?? "Unknown"
             };
         }
 
+        // ======================== TRANSACTION METHODS ========================
 
         public async Task<string> RegisterContractAsync(string studentId, ContractRegisterDTO dto)
         {
@@ -314,90 +101,151 @@ namespace DormitoryManagementSystem.BUS.Implementations
 
             var activeContract = await _contractDAO.GetActiveContractByStudentIDAsync(studentId);
             if (activeContract != null)
-                throw new InvalidOperationException("Bạn hiện đang có hợp đồng hiệu lực, không thể đăng ký mới.");
+                throw new InvalidOperationException($"Bạn hiện đang có hợp đồng tại phòng {activeContract.Roomid}.");
 
-            var room = await _roomDAO.GetRoomByIDAsync(dto.RoomID);
-            if (room == null) throw new KeyNotFoundException("Phòng không tồn tại.");
+            var room = await _roomDAO.GetRoomByIDAsync(dto.RoomID)
+                       ?? throw new KeyNotFoundException("Phòng không tồn tại.");
 
-            if (room.Status != "Active")
-                throw new InvalidOperationException("Phòng này đang bảo trì.");
+            if (room.Status != AppConstants.RoomStatus.Active)
+                throw new InvalidOperationException("Phòng này đang bảo trì/không hoạt động.");
 
             if (room.Currentoccupancy >= room.Capacity)
                 throw new InvalidOperationException("Phòng này đã đầy.");
 
-            // Tạo Entity Hợp đồng Mới
             var newContract = new Contract
             {
-                // Tự sinh mã HĐ: VD: CTR_20241125_123456
                 Contractid = $"CTR_{DateTime.Now:yyyyMMdd}_{new Random().Next(1000, 9999)}",
                 Studentid = studentId,
                 Roomid = dto.RoomID,
-                Starttime = DateOnly.FromDateTime(dto.StartTime), 
+                Starttime = DateOnly.FromDateTime(dto.StartTime),
                 Endtime = DateOnly.FromDateTime(dto.EndTime),
-                Status = "Pending", 
+                Status = AppConstants.ContractStatus.Pending, // Chờ duyệt
                 Createddate = DateTime.Now
             };
 
             await _contractDAO.AddContractAsync(newContract);
-
-            // Lúc này là chưa tăng cái CurrentOccupancy của phòng vì HĐ đang ở trạng thái Pending
-            // Chờ admin duyệt rồi mới tăng
-
             return newContract.Contractid;
         }
 
-
-
-        // Admin thêm chức năng lọc theo tên và mã sv
-        // ucContractManagement
-        public async Task<IEnumerable<ContractReadDTO>> GetContractsAsync(string SearchTerm)
+        public async Task<string> AddContractAsync(ContractCreateDTO dto, string staffUserID)
         {
-            if (!string.IsNullOrWhiteSpace(SearchTerm))
+            if (await _contractDAO.GetContractByIDAsync(dto.ContractID) != null)
+                throw new InvalidOperationException($"Hợp đồng {dto.ContractID} đã tồn tại.");
+
+            if (dto.EndTime <= dto.StartTime)
+                throw new ArgumentException("Ngày kết thúc phải sau ngày bắt đầu.");
+
+            // Kiểm tra sinh viên
+            if (await _studentDAO.GetStudentByIDAsync(dto.StudentID) == null)
+                throw new KeyNotFoundException($"Không tìm thấy sinh viên {dto.StudentID}.");
+
+            // Kiểm tra trùng hợp đồng
+            var activeContract = await _contractDAO.GetActiveContractByStudentIDAsync(dto.StudentID);
+            if (activeContract != null)
+                throw new InvalidOperationException($"Sinh viên này đã có hợp đồng tại phòng {activeContract.Roomid}.");
+
+            // Kiểm tra phòng
+            var room = await _roomDAO.GetRoomByIDAsync(dto.RoomID)
+                       ?? throw new KeyNotFoundException($"Không tìm thấy phòng {dto.RoomID}.");
+
+            if (room.Status != AppConstants.RoomStatus.Active)
+                throw new InvalidOperationException($"Phòng {dto.RoomID} không hoạt động.");
+
+            if (room.Currentoccupancy >= room.Capacity)
+                throw new InvalidOperationException($"Phòng {dto.RoomID} đã đầy.");
+
+            var contract = _mapper.Map<Contract>(dto);
+            contract.Createddate = DateTime.Now;
+            contract.Staffuserid = staffUserID;
+
+            await _contractDAO.AddContractAsync(contract);
+
+            // Nếu tạo hợp đồng Active ngay thì tăng slot phòng
+            if (contract.Status == AppConstants.ContractStatus.Active)
             {
-                SearchTerm = SearchTerm.Trim().ToLower();
+                room.Currentoccupancy += 1;
+                await _roomDAO.UpdateRoomAsync(room);
             }
-            else
-            {
-                // Nếu chỉ toàn khoảng trắng hoặc null -> Gán null luôn để DAO dễ check
-                SearchTerm = null;
-            }
-            var contracts = await _contractDAO.GetContractsByFilterAsync(SearchTerm);
-            return _mapper.Map<IEnumerable<ContractReadDTO>>(contracts);
+            return contract.Contractid;
         }
 
-        // frmFilterContract
-
-        public async Task<IEnumerable<ContractReadDTO>> GetContractsByMultiConditionAsync(ContractFilterDTO filter)
+        public async Task UpdateContractAsync(string id, ContractUpdateDTO dto)
         {
-            if (string.IsNullOrWhiteSpace(filter.Status))
-            {
-                filter.Status = "All";
-            }
-            if (string.Equals(filter.BuildingID, "All", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(filter.BuildingID, "Tất cả", StringComparison.OrdinalIgnoreCase))
-            {
-                filter.BuildingID = null;
-            }
+            var contract = await _contractDAO.GetContractByIDAsync(id)
+                           ?? throw new KeyNotFoundException($"Hợp đồng {id} không tồn tại.");
 
-            if (string.Equals(filter.Status, "All", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(filter.Status, "Tất cả", StringComparison.OrdinalIgnoreCase))
-            {
-                filter.Status = null;
-            }
+            if (dto.EndTime <= dto.StartTime) throw new ArgumentException("Thời gian không hợp lệ.");
 
-            if (filter.FromDate.HasValue && filter.ToDate.HasValue)
+            // Logic phức tạp: Đổi phòng hoặc đổi trạng thái
+            bool isRoomChanged = contract.Roomid != dto.RoomID;
+            bool isStatusChanged = (contract.Status ?? AppConstants.ContractStatus.Active) != dto.Status;
+
+            if (isRoomChanged)
             {
-                if (filter.FromDate.Value > filter.ToDate.Value)
+                // Trả slot phòng cũ
+                if (contract.Status == AppConstants.ContractStatus.Active)
                 {
-                    var temp = filter.FromDate;
-                    filter.FromDate = filter.ToDate;
-                    filter.ToDate = temp;
+                    var oldRoom = await _roomDAO.GetRoomByIDAsync(contract.Roomid);
+                    if (oldRoom != null && oldRoom.Currentoccupancy > 0)
+                    {
+                        oldRoom.Currentoccupancy--;
+                        await _roomDAO.UpdateRoomAsync(oldRoom);
+                    }
+                }
+                // Chiếm slot phòng mới
+                if (dto.Status == AppConstants.ContractStatus.Active)
+                {
+                    var newRoom = await _roomDAO.GetRoomByIDAsync(dto.RoomID)
+                                  ?? throw new KeyNotFoundException($"Phòng mới {dto.RoomID} không tồn tại.");
+
+                    if (newRoom.Currentoccupancy >= newRoom.Capacity)
+                        throw new InvalidOperationException($"Phòng {dto.RoomID} đã đầy.");
+
+                    newRoom.Currentoccupancy++;
+                    await _roomDAO.UpdateRoomAsync(newRoom);
+                }
+            }
+            else if (isStatusChanged)
+            {
+                var room = await _roomDAO.GetRoomByIDAsync(contract.Roomid);
+                if (room != null)
+                {
+                    // Active -> Non-Active: Giảm slot
+                    if (contract.Status == AppConstants.ContractStatus.Active && dto.Status != AppConstants.ContractStatus.Active)
+                    {
+                        if (room.Currentoccupancy > 0) room.Currentoccupancy--;
+                    }
+                    // Non-Active -> Active: Tăng slot
+                    else if (contract.Status != AppConstants.ContractStatus.Active && dto.Status == AppConstants.ContractStatus.Active)
+                    {
+                        if (room.Currentoccupancy >= room.Capacity) throw new InvalidOperationException("Phòng đã đầy.");
+                        room.Currentoccupancy++;
+                    }
+                    await _roomDAO.UpdateRoomAsync(room);
                 }
             }
 
-            var contracts = await _contractDAO.GetContractsByMultiConditionAsync(filter);
+            _mapper.Map(dto, contract);
+            contract.Contractid = id;
+            await _contractDAO.UpdateContractAsync(contract);
+        }
 
-            return _mapper.Map<IEnumerable<ContractReadDTO>>(contracts);
+        public async Task DeleteContractAsync(string id)
+        {
+            var contract = await _contractDAO.GetContractByIDAsync(id)
+                           ?? throw new KeyNotFoundException($"Hợp đồng {id} không tồn tại.");
+
+            // Nếu xóa HĐ đang Active, trả lại slot phòng
+            if (contract.Status == AppConstants.ContractStatus.Active)
+            {
+                var room = await _roomDAO.GetRoomByIDAsync(contract.Roomid);
+                if (room != null && room.Currentoccupancy > 0)
+                {
+                    room.Currentoccupancy--;
+                    await _roomDAO.UpdateRoomAsync(room);
+                }
+            }
+            await _contractDAO.DeleteContractAsync(id);
         }
     }
 }

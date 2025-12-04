@@ -15,11 +15,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DormitoryManagementSystem.Mappings\DormitoryManagementSystem.Mappings.csproj" />
     <ProjectReference Include="..\DormitoryManagementSystem.BUS\DormitoryManagementSystem.BUS.csproj" />
-    <ProjectReference Include="..\DormitoryManagementSystem.DAO\DormitoryManagementSystem.DAO.csproj" />
     <ProjectReference Include="..\DormitoryManagementSystem.DTO\DormitoryManagementSystem.DTO.csproj" />
-    <ProjectReference Include="..\DormitoryManagementSystemV10.Entity\DormitoryManagementSystem.Entity.csproj" />
+    <ProjectReference Include="..\DormitoryManagementSystem.Utils\DormitoryManagementSystem.Utils.csproj" />
   </ItemGroup>
 
 </Project>

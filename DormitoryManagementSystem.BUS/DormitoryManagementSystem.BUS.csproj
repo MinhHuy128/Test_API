@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DormitoryManagementSystem.DAO\DormitoryManagementSystem.DAO.csproj" />
     <ProjectReference Include="..\DormitoryManagementSystem.DTO\DormitoryManagementSystem.DTO.csproj" />
+    <ProjectReference Include="..\DormitoryManagementSystem.Utils\DormitoryManagementSystem.Utils.csproj" />
   </ItemGroup>
 
 </Project>

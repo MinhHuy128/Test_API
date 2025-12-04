@@ -1,5 +1,4 @@
-﻿
-using DormitoryManagementSystem.DAO.Context;
+﻿using DormitoryManagementSystem.DAO.Context;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.Entity;
 using Microsoft.EntityFrameworkCore;
@@ -9,37 +8,20 @@ namespace DormitoryManagementSystem.DAO.Implementations
     public class UserDAO : IUserDAO
     {
         private readonly PostgreDbContext _context;
+        public UserDAO(PostgreDbContext context) => _context = context;
 
-        public UserDAO(PostgreDbContext context)
-        {
-            this._context = context;
-        }
+        public async Task<IEnumerable<User>> GetAllUsersAsync() =>
+            await _context.Users.AsNoTracking().Where(x => x.IsActive).ToListAsync();
 
-        public async Task<IEnumerable<User>> GetAllUsersAsync()
-        {
-            return await _context.Users.AsNoTracking()
-                                       .Where(x => x.IsActive)
-                                       .ToListAsync();
-        }
+        public async Task<IEnumerable<User>> GetAllUsersIncludingInactivesAsync() =>
+            await _context.Users.AsNoTracking().ToListAsync();
 
-        public async Task<IEnumerable<User>> GetAllUsersIncludingInactivesAsync()
-        {
-            return await _context.Users.AsNoTracking()
-                                       .ToListAsync();
-        }
+        public async Task<User?> GetUserByIDAsync(string id) => await _context.Users.FindAsync(id);
 
-        public async Task<User?> GetUserByIDAsync(string id)
-        {
-            return await _context.Users.FindAsync(id);
-        }
-
-        public async Task<User?> GetUserByUsernameAsync(string username)
-        {
-            return await _context.Users.AsNoTracking()
-                                       .Where(user => user.Username == username)
-                                       .Include(user => user.Student)
-                                       .FirstOrDefaultAsync();
-        }
+        public async Task<User?> GetUserByUsernameAsync(string username) =>
+            await _context.Users.AsNoTracking()
+                                .Include(u => u.Student)
+                                .FirstOrDefaultAsync(user => user.Username == username);
 
         public async Task AddUserAsync(User user)
         {
@@ -55,13 +37,12 @@ namespace DormitoryManagementSystem.DAO.Implementations
 
         public async Task DeleteUserAsync(string id)
         {
-            User? u = await _context.Users.FindAsync(id);
-            if (u == null) return;
-
-            u.IsActive = false;
-
-            _context.Update(u);
-            await _context.SaveChangesAsync();
+            var u = await _context.Users.FindAsync(id);
+            if (u != null)
+            {
+                u.IsActive = false;
+                await _context.SaveChangesAsync();
+            }
         }
     }
 }

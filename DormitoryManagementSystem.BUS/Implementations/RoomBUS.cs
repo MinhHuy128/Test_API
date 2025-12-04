@@ -2,8 +2,9 @@
 using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Rooms;
+using DormitoryManagementSystem.DTO.SearchCriteria; // RoomSearchCriteria
+using DormitoryManagementSystem.DTO.Utils; // AppConstants
 using DormitoryManagementSystem.Entity;
-using System.Collections.Generic;
 
 namespace DormitoryManagementSystem.BUS.Implementations
 {
@@ -20,226 +21,180 @@ namespace DormitoryManagementSystem.BUS.Implementations
             _mapper = mapper;
         }
 
+        // ======================== GET & SEARCH ========================
+
         public async Task<IEnumerable<RoomReadDTO>> GetAllRoomsAsync()
         {
-            IEnumerable<Room> rooms = await _roomDAO.GetAllRoomsAsync();
-            return _mapper.Map<IEnumerable<RoomReadDTO>>(rooms);
+            // Lấy tất cả phòng Active/Maintenance (trừ Inactive)
+            var list = await _roomDAO.SearchRoomsAsync(new RoomSearchCriteria { Status = null });
+            // Lưu ý: DAO đã mặc định lọc != Inactive nếu status truyền vào là null
+            return _mapper.Map<IEnumerable<RoomReadDTO>>(list);
         }
 
-        public async Task<IEnumerable<RoomReadDTO>> GetAllRoomsIncludingInactivesAsync()
-        {
-            IEnumerable<Room> rooms = await _roomDAO.GetAllRoomsIncludingInactivesAsync();
-            return _mapper.Map<IEnumerable<RoomReadDTO>>(rooms);
-        }
+        public async Task<IEnumerable<RoomReadDTO>> GetAllRoomsIncludingInactivesAsync() =>
+            _mapper.Map<IEnumerable<RoomReadDTO>>(await _roomDAO.GetAllRoomsIncludingInactivesAsync());
 
         public async Task<RoomReadDTO?> GetRoomByIDAsync(string id)
         {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("Room ID không thể để trống");
+            var room = await _roomDAO.GetRoomByIDAsync(id);
+            return room == null ? null : _mapper.Map<RoomReadDTO>(room);
+        }
 
-            Room? room = await _roomDAO.GetRoomByIDAsync(id);
-            if (room == null) return null;
+        public async Task<RoomDetailDTO?> GetRoomDetailByIDAsync(string id)
+        {
+            var r = await _roomDAO.GetRoomDetailByIDAsync(id);
+            if (r == null) return null;
 
-            return _mapper.Map<RoomReadDTO>(room);
+            return new RoomDetailDTO
+            {
+                RoomID = r.Roomid,
+                RoomNumber = r.Roomnumber,
+                BuildingName = r.Building?.Buildingname ?? "Unknown",
+                Capacity = r.Capacity,
+                CurrentOccupancy = r.Currentoccupancy ?? 0,
+                Price = r.Price,
+                Status = r.Status ?? "Unknown",
+                AllowCooking = r.Allowcooking ?? false,
+                AirConditioner = r.Airconditioner ?? false
+            };
         }
 
         public async Task<IEnumerable<RoomReadDTO>> GetRoomsByBuildingIDAsync(string buildingId)
         {
-            if (string.IsNullOrWhiteSpace(buildingId))
-                throw new ArgumentException("Building ID không thể để trống");
+            if (await _buildingDAO.GetByIDAsync(buildingId) == null)
+                throw new KeyNotFoundException($"Tòa nhà {buildingId} không tồn tại.");
 
-            Building? building = await _buildingDAO.GetByIDAsync(buildingId);
-            if (building == null)
-                throw new KeyNotFoundException($"Không có building với ID {buildingId}.");
-
-            IEnumerable<Room> rooms = await _roomDAO.GetRoomsByBuildingIDAsync(buildingId);
-            return _mapper.Map<IEnumerable<RoomReadDTO>>(rooms);
+            var list = await _roomDAO.SearchRoomsAsync(new RoomSearchCriteria { BuildingID = buildingId });
+            return _mapper.Map<IEnumerable<RoomReadDTO>>(list);
         }
+
+        // Admin Search Keyword
+        public async Task<IEnumerable<RoomReadDTO>> SearchRoomsAsync(string keyword)
+        {
+            var list = await _roomDAO.SearchRoomsAsync(new RoomSearchCriteria { Keyword = keyword });
+            return _mapper.Map<IEnumerable<RoomReadDTO>>(list);
+        }
+
+        // Student Search (Card View)
+        public async Task<IEnumerable<RoomDetailDTO>> SearchRoomInCardAsync(
+            string? bId, int? num, int? cap, decimal? min, decimal? max, bool? cook, bool? ac)
+        {
+            var criteria = new RoomSearchCriteria
+            {
+                BuildingID = bId,
+                RoomNumber = num,
+                Capacity = cap,
+                MinPrice = min,
+                MaxPrice = max,
+                AllowCooking = cook,
+                AirConditioner = ac,
+                Status = AppConstants.RoomStatus.Active // Chỉ hiện phòng Active cho SV
+            };
+
+            var rooms = await _roomDAO.SearchRoomsAsync(criteria);
+
+            // Logic nghiệp vụ: Chỉ lấy phòng còn chỗ (Occupancy < Capacity)
+            var availableRooms = rooms.Where(r => r.Currentoccupancy < r.Capacity);
+
+            return availableRooms.Select(r => new RoomDetailDTO
+            {
+                RoomID = r.Roomid,
+                RoomNumber = r.Roomnumber,
+                BuildingName = r.Building?.Buildingname ?? "",
+                Capacity = r.Capacity,
+                CurrentOccupancy = r.Currentoccupancy ?? 0,
+                Price = r.Price,
+                Status = r.Status ?? "",
+                AllowCooking = r.Allowcooking ?? false,
+                AirConditioner = r.Airconditioner ?? false
+            });
+        }
+
+        // Student Search (Grid View)
+        public async Task<IEnumerable<RoomGridDTO>> SearchRoomInGridAsync(
+             string? bId, int? num, int? cap, decimal? min, decimal? max)
+        {
+            var criteria = new RoomSearchCriteria
+            {
+                BuildingID = bId,
+                RoomNumber = num,
+                Capacity = cap,
+                MinPrice = min,
+                MaxPrice = max,
+                Status = AppConstants.RoomStatus.Active
+            };
+
+            var rooms = await _roomDAO.SearchRoomsAsync(criteria);
+            var availableRooms = rooms.Where(r => r.Currentoccupancy < r.Capacity);
+
+            return availableRooms.Select(r => new RoomGridDTO
+            {
+                RoomID = r.Roomid,
+                RoomNumber = r.Roomnumber,
+                BuildingName = r.Building?.Buildingname ?? "",
+                Capacity = r.Capacity,
+                CurrentOccupancy = r.Currentoccupancy ?? 0,
+                Status = r.Status ?? ""
+            });
+        }
+
+        public async Task<IEnumerable<int>> GetRoomCapacitiesAsync() => await _roomDAO.GetDistinctCapacitiesAsync();
+
+        public IEnumerable<RoomPriceDTO> GetPriceRanges() => new List<RoomPriceDTO>
+        {
+            new() { DisplayText = "Tất cả", MinPrice = null, MaxPrice = null },
+            new() { DisplayText = "Dưới 1 triệu", MinPrice = 0, MaxPrice = 1000000 },
+            new() { DisplayText = "1 - 2 triệu", MinPrice = 1000000, MaxPrice = 2000000 },
+            new() { DisplayText = "2 - 3 triệu", MinPrice = 2000000, MaxPrice = 3000000 },
+            new() { DisplayText = "Trên 3 triệu", MinPrice = 3000000, MaxPrice = null }
+        };
+
+        // ======================== TRANSACTIONS ========================
 
         public async Task<string> AddRoomAsync(RoomCreateDTO dto)
         {
-            Room? existingRoom = await _roomDAO.GetRoomByIDAsync(dto.RoomID);
-            if (existingRoom != null)
-                throw new InvalidOperationException($"Room với ID {dto.RoomID} đã tồn tại.");
+            if (await _roomDAO.GetRoomByIDAsync(dto.RoomID) != null)
+                throw new InvalidOperationException($"Phòng {dto.RoomID} đã tồn tại.");
 
-            Building? building = await _buildingDAO.GetByIDAsync(dto.BuildingID);
-            if (building == null)
-                throw new KeyNotFoundException($"Không có building với ID {dto.BuildingID}.");
+            if (await _buildingDAO.GetByIDAsync(dto.BuildingID) == null)
+                throw new KeyNotFoundException($"Tòa nhà {dto.BuildingID} không tồn tại.");
 
-            Room roomEntity = _mapper.Map<Room>(dto);
-
-            // Mặc định khi tạo mới thì chưa có người ở
+            var roomEntity = _mapper.Map<Room>(dto);
             roomEntity.Currentoccupancy = 0;
 
             await _roomDAO.AddRoomAsync(roomEntity);
-
             return roomEntity.Roomid;
         }
 
         public async Task UpdateRoomAsync(string id, RoomUpdateDTO dto)
         {
-            Room? roomEntity = await _roomDAO.GetRoomByIDAsync(id);
-            if (roomEntity == null)
-                throw new KeyNotFoundException($"Không có room với ID {id}.");
+            var roomEntity = await _roomDAO.GetRoomByIDAsync(id)
+                             ?? throw new KeyNotFoundException($"Phòng {id} không tồn tại.");
 
             if (dto.BuildingID != roomEntity.Buildingid)
             {
-                Building? building = await _buildingDAO.GetByIDAsync(dto.BuildingID);
-                if (building == null)
-                    throw new KeyNotFoundException($"Không có building với ID {dto.BuildingID}.");
+                if (await _buildingDAO.GetByIDAsync(dto.BuildingID) == null)
+                    throw new KeyNotFoundException($"Tòa nhà {dto.BuildingID} không tồn tại.");
             }
 
             if (dto.Capacity < roomEntity.Currentoccupancy)
-            {
-                throw new InvalidOperationException($"Không thể giảm sức chứa xuống {dto.Capacity} " +
-                                                    $"vì hiện tại có {roomEntity.Currentoccupancy} sinh viên trong phòng này.");
-            }
-
-            //if (dto.Status == "Maintenance" && roomEntity.Currentoccupancy > 0)
-            //{
-            //    throw new InvalidOperationException("Cannot set status to 'Maintenance' while the room is occupied. " +
-            //                                        "Please move students first.");
-            //}
+                throw new InvalidOperationException($"Sức chứa mới ({dto.Capacity}) nhỏ hơn số sinh viên hiện tại ({roomEntity.Currentoccupancy}).");
 
             _mapper.Map(dto, roomEntity);
-            roomEntity.Roomid = id; 
-
-            // Lưu ý: Không map CurrentOccupancy từ DTO (vì DTO Update không có trường này, và logic này do hệ thống tự tính)
+            roomEntity.Roomid = id;
 
             await _roomDAO.UpdateRoomAsync(roomEntity);
         }
 
         public async Task DeleteRoomAsync(string id)
         {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("Room ID không thể để trống");
-
-            var roomEntity = await _roomDAO.GetRoomByIDAsync(id);
-            if (roomEntity == null)
-                throw new KeyNotFoundException($"Không có room với ID {id}.");
+            var roomEntity = await _roomDAO.GetRoomByIDAsync(id)
+                             ?? throw new KeyNotFoundException($"Phòng {id} không tồn tại.");
 
             if (roomEntity.Currentoccupancy > 0)
-            {
-                throw new InvalidOperationException($"Không thể xóa room {id} vì có {roomEntity.Currentoccupancy} sinh viên đang ở trong phòng.");
-            }
+                throw new InvalidOperationException($"Không thể xóa phòng {id} vì đang có sinh viên.");
 
             await _roomDAO.DeleteRoomAsync(id);
         }
-
-
-
-
-
-
-        //student
-        //Mới - từ thằng này trở xuống là mới
-        public async Task<IEnumerable<RoomDetailDTO>> SearchRoomInCardAsync(
-            string? buildingName,
-            int? roomNumber,
-            int? capacity,
-            decimal? minPrice,
-            decimal? maxPrice,
-            bool? allowCooking,   
-            bool? airConditioner)  
-        {
-            var rooms = await _roomDAO.GetRoomsByFilterAsync(
-                buildingName, roomNumber, capacity, minPrice,maxPrice, allowCooking, airConditioner);
-
-            var result = rooms.Select(room => new RoomDetailDTO
-            {
-                RoomID = room.Roomid,
-                RoomNumber = room.Roomnumber,
-                BuildingName = room.Building.Buildingname,
-                Capacity = room.Capacity,
-                CurrentOccupancy = room.Currentoccupancy ?? 0,
-                Price = room.Price,
-                Status = room.Status ?? "Unknown",
-                AllowCooking = room.Allowcooking ?? false,
-                AirConditioner = room.Airconditioner ?? false
-            });
-
-            return result;
-        }
-
-         public async Task<IEnumerable<RoomGridDTO>> SearchRoomInGridAsync(
-              string? buildingId,
-             int? roomNumber,
-             int? capacity,
-             decimal? minPrice,
-             decimal? maxPrice
-             
-              )
-         {
-            var rooms = await _roomDAO.GetRoomsByFilterAsync(
-               buildingId, roomNumber, capacity, minPrice,maxPrice,null,null);
-
-            var result = rooms.Select(room => new RoomGridDTO
-            {
-                RoomID = room.Roomid,
-                RoomNumber = room.Roomnumber,
-                BuildingName = room.Building.Buildingname,
-                Capacity = room.Capacity,
-                CurrentOccupancy = room.Currentoccupancy ?? 0,
-                Status = room.Status ?? "Unknown",
-               
-            });
-            return result;
-        }
-
-
-      
-
-        public async Task<RoomDetailDTO?> GetRoomDetailByIDAsync(string id)
-        {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("Room ID không thể để trống");
-
-            var room = await _roomDAO.GetRoomDetailByIDAsync(id);
-
-            if (room == null) return null;
-
-            return new RoomDetailDTO
-            {
-                RoomID = room.Roomid,
-                RoomNumber = room.Roomnumber,
-                BuildingName = room.Building.Buildingname, 
-                Capacity = room.Capacity,
-                CurrentOccupancy = room.Currentoccupancy ?? 0, 
-                Price = room.Price,
-                Status = room.Status ?? "Unknown",
-                AllowCooking = room.Allowcooking ?? false,     
-                AirConditioner = room.Airconditioner ?? false  
-            };
-        }
-
-
-
-        public async Task<IEnumerable<int>> GetRoomCapacitiesAsync()
-        {
-            return await _roomDAO.GetDistinctCapacitiesAsync();
-        }
-
-        
-        public IEnumerable<RoomPriceDTO> GetPriceRanges()
-        {
-            return new List<RoomPriceDTO>
-                {
-                    new RoomPriceDTO { DisplayText = "Tất cả", MinPrice = null, MaxPrice = null },
-                    new RoomPriceDTO { DisplayText = "Dưới 1 triệu", MinPrice = 0, MaxPrice = 1000000 },
-                    new RoomPriceDTO { DisplayText = "1 - 2 triệu", MinPrice = 1000000, MaxPrice = 2000000 },
-                    new RoomPriceDTO { DisplayText = "2 - 3 triệu", MinPrice = 2000000, MaxPrice = 3000000 },
-                    new RoomPriceDTO { DisplayText = "Trên 3 triệu", MinPrice = 3000000, MaxPrice = null }
-                };
-        }
-
-
-        //ADMIN
-        // Lọc theo tên hoặc mã phòng
-        public async Task<IEnumerable<RoomReadDTO>> SearchRoomsAsync(string keyword)
-        {
-            IEnumerable<Room> rooms = await _roomDAO.SearchRoomsAsync(keyword);
-            return _mapper.Map<IEnumerable<RoomReadDTO>>(rooms);
-        }
-
     }
 }

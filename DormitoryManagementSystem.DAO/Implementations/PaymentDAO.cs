@@ -1,46 +1,20 @@
-﻿
-using DormitoryManagementSystem.DAO.Context;
+﻿using DormitoryManagementSystem.DAO.Context;
 using DormitoryManagementSystem.DAO.Interfaces;
-using DormitoryManagementSystem.DTO.Payments;
+using DormitoryManagementSystem.DTO.SearchCriteria; // Criteria
+using DormitoryManagementSystem.DTO.Utils; // AppConstants
 using DormitoryManagementSystem.Entity;
+using DormitoryManagementSystem.Utils;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Internal;
 
 namespace DormitoryManagementSystem.DAO.Implementations
 {
     public class PaymentDAO : IPaymentDAO
     {
         private readonly PostgreDbContext _context;
+        public PaymentDAO(PostgreDbContext context) => _context = context;
 
-        public PaymentDAO(PostgreDbContext context)
-        {
-            this._context = context;
-        }
-
-        public async Task<IEnumerable<Payment>> GetAllPaymentsAsync()
-        {
-            return await _context.Payments.AsNoTracking().ToListAsync();
-        }
-
-        public async Task<IEnumerable<Payment>> GetPaymentsByContractIDAsync(string contractID)
-        {
-            return await _context.Payments.AsNoTracking()
-                                          .Where(payment => payment.Contractid == contractID)
-                                          .OrderByDescending(payment => payment.Paymentdate)
-                                          .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Payment>> GetPaymentsByStatusAsync(string status)
-        {
-            return await _context.Payments.AsNoTracking()
-                                          .Where(payment => payment.Paymentstatus == status)
-                                          .ToListAsync();
-        }
-
-        public async Task<Payment?> GetPaymentByIDAsync(string id)
-        {
-            return await _context.Payments.FindAsync(id);
-        }
+        // --- CRUD ---
+        public async Task<Payment?> GetPaymentByIDAsync(string id) => await _context.Payments.FindAsync(id);
 
         public async Task AddPaymentAsync(Payment payment)
         {
@@ -56,96 +30,59 @@ namespace DormitoryManagementSystem.DAO.Implementations
 
         public async Task RemovePaymentAsync(string id)
         {
-            Payment? p = await _context.Payments.FindAsync(id);
-
-            if (p == null) return;
-            _context.Payments.Remove(p);
-
-            await _context.SaveChangesAsync();
+            var p = await _context.Payments.FindAsync(id);
+            if (p != null)
+            {
+                _context.Payments.Remove(p);
+                await _context.SaveChangesAsync();
+            }
         }
 
-
-
-
-        // Sinh viên: Xem danh sách hóa đơn (Tất cả / Đã trả / Nợ) theo trạng thái á
-        public async Task<IEnumerable<Payment>> GetPaymentsByStudentAndStatusAsync(string studentId, string? status)
+        // --- SEARCH ALL-IN-ONE ---
+        public async Task<IEnumerable<Payment>> SearchPaymentsAsync(PaymentSearchCriteria criteria)
         {
-
-            var query = _context.Payments
-                .AsNoTracking()
-                .Include(p => p.Contract) 
-                .Where(p => p.Contract.Studentid == studentId) 
+            var query = _context.Payments.AsNoTracking()
+                .Include(p => p.Contract).ThenInclude(c => c.Student) // Join lấy tên SV
+                .Include(p => p.Contract).ThenInclude(c => c.Room)    // Join lấy phòng/tòa nhà
                 .AsQueryable();
 
-            if (!string.IsNullOrEmpty(status) && status.ToLower() != "all")
+            // 1. Lọc ID quan hệ
+            if (!string.IsNullOrEmpty(criteria.ContractID))
+                query = query.Where(p => p.Contractid == criteria.ContractID);
+
+            if (!string.IsNullOrEmpty(criteria.StudentID))
+                query = query.Where(p => p.Contract.Studentid == criteria.StudentID);
+
+            if (!string.IsNullOrEmpty(criteria.BuildingID) && criteria.BuildingID != "All")
+                query = query.Where(p => p.Contract.Room.Buildingid == criteria.BuildingID);
+
+            // 2. Lọc thời gian
+            if (criteria.Month.HasValue && criteria.Month > 0)
+                query = query.Where(p => p.Billmonth == criteria.Month.Value);
+
+            if (criteria.Year.HasValue && criteria.Year > 0)
+                query = query.Where(p => p.Paymentdate.HasValue && p.Paymentdate.Value.Year == criteria.Year.Value);
+
+            // 3. Lọc trạng thái
+            if (!string.IsNullOrEmpty(criteria.Status) && criteria.Status != "All")
             {
-                if (status == "Pending" || status == "Unpaid")
-                {
-                    query = query.Where(p => p.Paymentstatus == "Unpaid" || p.Paymentstatus == "Late");
-                }
-                else if (status == "Paid")
-                {
-                    query = query.Where(p => p.Paymentstatus == "Paid");
-                }
+                if (criteria.Status == "Pending") // Logic: Pending = Unpaid OR Late
+                    query = query.Where(p => p.Paymentstatus == AppConstants.PaymentStatus.Unpaid || p.Paymentstatus == AppConstants.PaymentStatus.Late);
                 else
-                {
-                    query = query.Where(p => p.Paymentstatus == status);
-                }
+                    query = query.Where(p => p.Paymentstatus == criteria.Status);
             }
 
-            return await query
-                .OrderByDescending(p => p.Billmonth)
-                .ThenByDescending(p => p.Paymentdate)
-                .ToListAsync();
-        }
-
-        // Admin: Lấy danh sách thanh toán với các bộ lọc
-        public async Task<IEnumerable<Payment>> GetPaymentsForAdminAsync(
-            int? month,
-            string? status,
-            string? building,
-            string? searchKeyword) // Tìm theo Tên hoặc MSSV
-        {
-
-            var query = _context.Payments
-                .AsNoTracking()
-                .Include(p => p.Contract)
-                    .ThenInclude(c => c.Student) 
-                .Include(p => p.Contract)
-                    .ThenInclude(c => c.Room)  
-                .AsQueryable();
-
-            // Lọc theo Tháng
-            if (month.HasValue && month > 0)
-                query = query.Where(p => p.Billmonth == month.Value);
-
-         
-            // Lọc theo Trạng thái
-            if (!string.IsNullOrEmpty(status) && status != "All")
-                query = query.Where(p => p.Paymentstatus == status);
-
-            if (!string.IsNullOrEmpty(building) && building != "All")
+            // 4. Tìm kiếm từ khóa (Keyword)
+            if (!string.IsNullOrWhiteSpace(criteria.Keyword))
             {
-                // Đi từ Payment -> Contract -> Room -> Buildingid
-                query = query.Where(p => p.Contract.Room.Buildingid == building);
+                string key = criteria.Keyword.ToLower().Trim();
+                query = query.Where(p => p.Contract.Student.Fullname.ToLower().Contains(key) ||
+                                         p.Contract.Studentid.ToLower().Contains(key));
             }
 
-            // Tìm kiếm (MSSV hoặc Tên)
-            if (!string.IsNullOrWhiteSpace(searchKeyword))
-            {
-                string key = searchKeyword.ToLower().Trim();
-                query = query.Where(p => p.Contract.Student.Fullname.ToLower().Contains(key)
-                                      || p.Contract.Studentid.ToLower().Contains(key));
-            }
-
-            // Sắp xếp: Mới nhất lên đầu
-            return await query.OrderByDescending(p => p.Billmonth).ToListAsync();
+            return await query.OrderByDescending(p => p.Billmonth)
+                              .ThenByDescending(p => p.Paymentdate)
+                              .ToListAsync();
         }
-
-
-        // Admin: Thống kê số liệu thanh toán
-        // Cái này nên chuyển về DTO chứ không phải entity Payment
-        
-       
     }
 }

@@ -3,6 +3,7 @@ using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.News;
 using DormitoryManagementSystem.Entity;
+using DormitoryManagementSystem.Utils; // Using AppConstants
 
 namespace DormitoryManagementSystem.BUS.Implementations
 {
@@ -19,96 +20,60 @@ namespace DormitoryManagementSystem.BUS.Implementations
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<NewsReadDTO>> GetAllNewsAsync()
-        {
-            IEnumerable<News> newsList = await _newsDAO.GetAllNewsAsync();
-            return _mapper.Map<IEnumerable<NewsReadDTO>>(newsList);
-        }
+        public async Task<IEnumerable<NewsReadDTO>> GetAllNewsAsync() =>
+            _mapper.Map<IEnumerable<NewsReadDTO>>(await _newsDAO.GetAllNewsAsync());
 
-        public async Task<IEnumerable<NewsReadDTO>> GetAllNewsIncludingInactivesAsync()
-        {
-            IEnumerable<News> newsList = await _newsDAO.GetAllNewsIncludingInactivesAsync();
-            return _mapper.Map<IEnumerable<NewsReadDTO>>(newsList);
-        }
+        public async Task<IEnumerable<NewsReadDTO>> GetAllNewsIncludingInactivesAsync() =>
+            _mapper.Map<IEnumerable<NewsReadDTO>>(await _newsDAO.GetAllNewsIncludingInactivesAsync());
 
         public async Task<NewsReadDTO?> GetNewsByIDAsync(string id)
         {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("News ID không thể để trống");
-
-            News? news = await _newsDAO.GetNewsByIDAsync(id);
-            if (news == null) return null;
-
-            return _mapper.Map<NewsReadDTO>(news);
+            var news = await _newsDAO.GetNewsByIDAsync(id);
+            return news == null ? null : _mapper.Map<NewsReadDTO>(news);
         }
 
         public async Task<string> AddNewsAsync(NewsCreateDTO dto)
         {
-            var existingNews = await _newsDAO.GetNewsByIDAsync(dto.NewsID);
-            if (existingNews != null)
-                throw new InvalidOperationException($"News với ID {dto.NewsID} đã tồn tại.");
+            if (await _newsDAO.GetNewsByIDAsync(dto.NewsID) != null)
+                throw new InvalidOperationException($"News ID {dto.NewsID} đã tồn tại.");
 
             if (!string.IsNullOrEmpty(dto.AuthorID))
             {
-                User? author = await _userDAO.GetUserByIDAsync(dto.AuthorID);
+                var author = await _userDAO.GetUserByIDAsync(dto.AuthorID)
+                             ?? throw new KeyNotFoundException($"Tác giả {dto.AuthorID} không tồn tại.");
 
-                if (author == null)
-                    throw new KeyNotFoundException($"Không có tác giả (User) với ID {dto.AuthorID}.");
-
-                if (!author.IsActive)
-                    throw new InvalidOperationException($"Không thể đăng tin tức vì tài khoản tác giả {dto.AuthorID} không hoạt động/đã bị xóa.");
-
-                if (author.Role != "Admin")
-                    throw new UnauthorizedAccessException("Chỉ có Admin mới được phép đăng tin tức.");
+                if (!author.IsActive) throw new InvalidOperationException("Tài khoản tác giả không hoạt động.");
+                if (author.Role != AppConstants.Role.Admin) throw new UnauthorizedAccessException("Chỉ Admin mới được đăng tin.");
             }
 
-            News newsEntity = _mapper.Map<News>(dto);
+            var news = _mapper.Map<News>(dto);
+            if (news.Publisheddate == null) news.Publisheddate = DateTime.Now;
 
-            // Set Published Date if not handled by DB default (Good practice to be explicit)
-            if (newsEntity.Publisheddate == null)
-                newsEntity.Publisheddate = DateTime.Now;
-
-            await _newsDAO.AddNewsAsync(newsEntity);
-
-            return newsEntity.Newsid;
+            await _newsDAO.AddNewsAsync(news);
+            return news.Newsid;
         }
 
         public async Task UpdateNewsAsync(string id, NewsUpdateDTO dto)
         {
-            News? newsEntity = await _newsDAO.GetNewsByIDAsync(id);
-            if (newsEntity == null)
-                throw new KeyNotFoundException($"Không có news với ID {id}.");
+            var news = await _newsDAO.GetNewsByIDAsync(id)
+                       ?? throw new KeyNotFoundException($"News {id} không tồn tại.");
 
-            _mapper.Map(dto, newsEntity);
-            newsEntity.Newsid = id;
-
-            await _newsDAO.UpdateNewsAsync(newsEntity);
+            _mapper.Map(dto, news);
+            news.Newsid = id;
+            await _newsDAO.UpdateNewsAsync(news);
         }
 
         public async Task DeleteNewsAsync(string id)
         {
-            if (string.IsNullOrWhiteSpace(id))
-                throw new ArgumentException("News ID không thể để trống");
-
-            var newsEntity = await _newsDAO.GetNewsByIDAsync(id);
-            if (newsEntity == null)
-                throw new KeyNotFoundException($"Không có news với ID {id}.");
-
+            if (await _newsDAO.GetNewsByIDAsync(id) == null)
+                throw new KeyNotFoundException($"News {id} không tồn tại.");
             await _newsDAO.DeleteNewsAsync(id);
         }
 
-        // Mới thêm - Lấy danh sách tóm tắt tin tức (chỉ gồm Newsid, Title, Publisheddate)
         public async Task<IEnumerable<NewsSummaryDTO>> GetNewsSummariesAsync()
         {
-            var newsList = await _newsDAO.GetNewsSummariesAsync();
-            var result = newsList.Select(n => new NewsSummaryDTO
-            {
-                NewsID = n.Newsid, 
-                Title = n.Title,
-                PublishedDate = n.Publisheddate ?? DateTime.MinValue
-            });
-
-            return result;
+            var list = await _newsDAO.GetNewsSummariesAsync();
+            return list.Select(n => new NewsSummaryDTO { NewsID = n.Newsid, Title = n.Title, PublishedDate = n.Publisheddate ?? DateTime.MinValue });
         }
     }
 }

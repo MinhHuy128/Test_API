@@ -3,6 +3,7 @@ using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Admins;
 using DormitoryManagementSystem.Entity;
+using DormitoryManagementSystem.Utils; // Using AppConstants
 
 namespace DormitoryManagementSystem.BUS.Implementations
 {
@@ -14,102 +15,70 @@ namespace DormitoryManagementSystem.BUS.Implementations
 
         public AdminBUS(IAdminDAO adminDAO, IUserDAO userDAO, IMapper mapper)
         {
-            this._adminDAO = adminDAO;
-            this._userDAO = userDAO;
-            this._mapper = mapper;
+            _adminDAO = adminDAO;
+            _userDAO = userDAO;
+            _mapper = mapper;
         }
 
-        public async Task<IEnumerable<AdminReadDTO>> GetAllAdminsAsync()
-        {
-            IEnumerable<Admin> admins = await this._adminDAO.GetAllAdminsAsync();
-            return this._mapper.Map<IEnumerable<AdminReadDTO>>(admins);
-        }
+        public async Task<IEnumerable<AdminReadDTO>> GetAllAdminsAsync() =>
+            _mapper.Map<IEnumerable<AdminReadDTO>>(await _adminDAO.GetAllAdminsAsync());
 
-        public async Task<IEnumerable<AdminReadDTO>> GetAllAdminsIncludingInactivesAsync()
-        {
-            IEnumerable<Admin> admins = await this._adminDAO.GetAllAdminsIncludingInactivesAsync();
-            return this._mapper.Map<IEnumerable<AdminReadDTO>>(admins);
-        }
+        public async Task<IEnumerable<AdminReadDTO>> GetAllAdminsIncludingInactivesAsync() =>
+            _mapper.Map<IEnumerable<AdminReadDTO>>(await _adminDAO.GetAllAdminsIncludingInactivesAsync());
 
         public async Task<AdminReadDTO?> GetAdminByIDAsync(string id)
         {
-            if (string.IsNullOrEmpty(id))
-                throw new ArgumentException("Admin id không thể để trống.");
-
-            Admin? ad = await this._adminDAO.GetAdminByIDAsync(id);
-            if (ad == null) return null;
-
-            return this._mapper.Map<AdminReadDTO>(ad);
+            var ad = await _adminDAO.GetAdminByIDAsync(id);
+            return ad == null ? null : _mapper.Map<AdminReadDTO>(ad);
         }
 
         public async Task<AdminReadDTO?> GetAdminByUserIDAsync(string userId)
         {
-            if (string.IsNullOrEmpty(userId))
-                throw new ArgumentException("user id không thể để trống.");
-
-            Admin? ad = await this._adminDAO.GetAdminByUserIDAsync(userId);
-            if (ad == null) return null;
-
-            return this._mapper.Map<AdminReadDTO>(ad);
+            var ad = await _adminDAO.GetAdminByUserIDAsync(userId);
+            return ad == null ? null : _mapper.Map<AdminReadDTO>(ad);
         }
 
         public async Task<string> AddAdminAsync(AdminCreateDTO dto)
         {
-            Admin? existing = await this._adminDAO.GetAdminByIDAsync(dto.AdminID);
-            if (existing != null)
-                throw new InvalidOperationException($"Không có quản trị viên với ID {dto.AdminID}.");
+            if (await _adminDAO.GetAdminByIDAsync(dto.AdminID) != null)
+                throw new InvalidOperationException($"Admin ID {dto.AdminID} đã tồn tại.");
 
-            Admin? existingCCCD = await this._adminDAO.GetAdminByCCCDAsync(dto.IDcard);
-            if (existingCCCD != null)
-                throw new InvalidOperationException($"Không có quản trị viên với CCCD {dto.IDcard}.");
+            if (await _adminDAO.GetAdminByCCCDAsync(dto.IDcard) != null)
+                throw new InvalidOperationException($"CCCD {dto.IDcard} đã tồn tại.");
 
-            User? user = await this._userDAO.GetUserByIDAsync(dto.UserID);
-            if (user == null)
-                throw new KeyNotFoundException($"Không có người dùng với ID {dto.UserID}. Vui lòng tạo tài khoản người dùng trước.");
+            var user = await _userDAO.GetUserByIDAsync(dto.UserID)
+                       ?? throw new KeyNotFoundException($"User {dto.UserID} không tồn tại.");
 
-            if (user.Role != "Admin")
-                throw new InvalidOperationException($"Người dùng {dto.UserID} có vai trò '{user.Role}'. Không thể gán hồ sơ quản trị viên.");
+            if (user.Role != AppConstants.Role.Admin)
+                throw new InvalidOperationException($"User {dto.UserID} không phải là Admin.");
 
-            Admin? existingProfile = await this._adminDAO.GetAdminByUserIDAsync(dto.UserID);
-            if (existingProfile != null)
-                throw new InvalidOperationException($"Người dùng {dto.UserID} đã được liên kết với hồ sơ quản trị viên {existingProfile.Adminid}.");
+            if (await _adminDAO.GetAdminByUserIDAsync(dto.UserID) != null)
+                throw new InvalidOperationException($"User {dto.UserID} đã có hồ sơ Admin.");
 
-            Admin ad = this._mapper.Map<Admin>(dto);
-            await this._adminDAO.AddAdminAsync(ad);
-
+            var ad = _mapper.Map<Admin>(dto);
+            await _adminDAO.AddAdminAsync(ad);
             return ad.Adminid;
         }
 
         public async Task UpdateAdminAsync(string id, AdminUpdateDTO dto)
         {
-            Admin? currentAdmin = await _adminDAO.GetAdminByIDAsync(id);
-            if (currentAdmin == null)
-                throw new KeyNotFoundException($"Không có quản trị viên với ID {id}.");
+            var currentAdmin = await _adminDAO.GetAdminByIDAsync(id)
+                               ?? throw new KeyNotFoundException($"Admin {id} không tồn tại.");
 
-            if (currentAdmin.Idcard != dto.IDcard)
-            {
-                Admin? existingCCCD = await this._adminDAO.GetAdminByCCCDAsync(dto.IDcard);
-                if (existingCCCD != null)
-                    throw new InvalidOperationException($"Không có quản trị viên với CCCD {dto.IDcard}.");
-            }
+            if (currentAdmin.Idcard != dto.IDcard && await _adminDAO.GetAdminByCCCDAsync(dto.IDcard) != null)
+                throw new InvalidOperationException($"CCCD {dto.IDcard} đã được sử dụng.");
 
             _mapper.Map(dto, currentAdmin);
             currentAdmin.Adminid = id;
-
             await _adminDAO.UpdateAdminAsync(currentAdmin);
         }
 
         public async Task DeleteAdminAsync(string id)
         {
-            if (string.IsNullOrEmpty(id))
-                throw new ArgumentException("Admin ID không thể để trống.");
+            var existing = await _adminDAO.GetAdminByIDAsync(id)
+                           ?? throw new KeyNotFoundException($"Admin {id} không tồn tại.");
 
-            Admin? existing = await _adminDAO.GetAdminByIDAsync(id);
-            if (existing == null)
-                throw new KeyNotFoundException($"Không có quản trị viên với ID {id}.");
-
-            // SOFT DELETE USER
-            // Gọi UserDAO để set IsActive = false cho UserID tương ứng
+            // Soft Delete User liên kết
             await _userDAO.DeleteUserAsync(existing.Userid);
         }
     }

@@ -26,5 +26,13 @@
             public const string Unpaid = "Unpaid";
             public const string Late = "Late";
         }
+
+        public static class ViolationStatus
+        {
+            public const string Pending = "Pending";
+            public const string Resolved = "Resolved";
+            public const string Paid = "Paid";
+            public const string Closed = "Closed";
+        }
     }
 }

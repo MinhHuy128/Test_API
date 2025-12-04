@@ -4,28 +4,22 @@ namespace DormitoryManagementSystem.BUS.Interfaces
 {
     public interface IContractBUS
     {
+        // Basic Read
         Task<IEnumerable<ContractReadDTO>> GetAllContractsAsync();
-        Task<IEnumerable<ContractReadDTO>> GetAllContractsIncludingInactivesAsync();
         Task<ContractReadDTO?> GetContractByIDAsync(string id);
+
+        // Search & Filter (Gọi SearchDAO)
         Task<IEnumerable<ContractReadDTO>> GetContractsByStudentIDAsync(string studentId);
-        Task<ContractReadDTO?> GetActiveContractByStudentIDAsync(string studentId);
+        Task<IEnumerable<ContractReadDTO>> GetContractsAsync(string searchTerm);
+        Task<IEnumerable<ContractReadDTO>> GetContractsByMultiConditionAsync(ContractFilterDTO filter);
+
+        // Student Specific
+        Task<ContractDetailDTO?> GetContractFullDetailAsync(string studentId);
+        Task<string> RegisterContractAsync(string studentId, ContractRegisterDTO dto);
+
+        // Transactions
         Task<string> AddContractAsync(ContractCreateDTO dto, string staffUserID);
         Task UpdateContractAsync(string id, ContractUpdateDTO dto);
         Task DeleteContractAsync(string id);
-
-
-
-
-
-        //Student
-        // Mới : Lấy chi tiết hợp đồng đầy đủ của thằng học sinh đó
-        Task<ContractDetailDTO?> GetContractFullDetailAsync(string studentId);
-
-        // Mới: Đăng ký hợp đồng (Sinh viên)
-        Task<string> RegisterContractAsync(string studentId, ContractRegisterDTO dto);
-
-        // Admim them loc theo ten va ma sv
-        Task<IEnumerable<ContractReadDTO>> GetContractsAsync(string SearchTerm);
-        Task<IEnumerable<ContractReadDTO>> GetContractsByMultiConditionAsync(ContractFilterDTO filter);
     }
 }

@@ -2,12 +2,12 @@
 using System.Security.Claims;
 using System.Text;
 using AutoMapper;
-using BCrypt.Net;
 using DormitoryManagementSystem.BUS.Interfaces;
 using DormitoryManagementSystem.DAO.Interfaces;
 using DormitoryManagementSystem.DTO.Users;
+using DormitoryManagementSystem.DTO.Utils; // Nhớ dùng namespace chứa AppConstants bạn mới tạo
 using DormitoryManagementSystem.Entity;
-using DormitoryManagementSystem.Utils; // Nhớ using cái này
+using DormitoryManagementSystem.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
@@ -44,18 +44,18 @@ namespace DormitoryManagementSystem.BUS.Implementations
         public async Task<LoginResponseDTO?> LoginAsync(UserLoginDTO dto)
         {
             var user = await _userDAO.GetUserByUsernameAsync(dto.UserName);
-
-            // Validate cơ bản
-            if (user == null || !user.IsActive || user.Role != dto.Role) return null;
+            if (user == null || !user.IsActive) return null;
+            if (user.Role != dto.Role) return null;
 
             bool isPasswordValid = false;
+            bool isPlainText = !IsBCryptHash(user.Password);
 
-            // Logic check pass cũ (Plain text) và mới (BCrypt) gộp lại
-            if (!IsBCryptHash(user.Password))
+            if (isPlainText)
             {
+                // Logic tương thích ngược: Nếu pass chưa hash thì so sánh thường
                 if (user.Password == dto.Password)
                 {
-                    // Tự động nâng cấp bảo mật: Hash lại password cũ
+                    // Tự động cập nhật bảo mật: Hash lại mật khẩu
                     user.Password = BCrypt.Net.BCrypt.HashPassword(dto.Password);
                     await _userDAO.UpdateUserAsync(user);
                     isPasswordValid = true;
@@ -63,7 +63,6 @@ namespace DormitoryManagementSystem.BUS.Implementations
             }
             else
             {
-                // Verify an toàn
                 try { isPasswordValid = BCrypt.Net.BCrypt.Verify(dto.Password, user.Password); }
                 catch { isPasswordValid = false; }
             }
@@ -78,8 +77,6 @@ namespace DormitoryManagementSystem.BUS.Implementations
                 Role = user.Role
             };
         }
-
-        // ... Giữ nguyên hàm GenerateJwtToken và IsBCryptHash vì chúng là logic nội bộ ...
 
         public async Task<string> AddUserAsync(UserCreateDTO dto)
         {
@@ -138,17 +135,37 @@ namespace DormitoryManagementSystem.BUS.Implementations
             await _userDAO.UpdateUserAsync(user);
         }
 
-        // Helper private
+        // --- Helper Methods ---
         private bool IsBCryptHash(string hash) =>
             !string.IsNullOrWhiteSpace(hash) && hash.Length == 60 &&
             (hash.StartsWith("$2a$") || hash.StartsWith("$2b$") || hash.StartsWith("$2y$"));
 
         private string GenerateJwtToken(User user)
         {
-            // ... (Code cũ của bạn phần này giữ nguyên là ổn, chỉ cần đảm bảo config đúng)
-            // Lưu ý dùng _configuration["Jwt:Key"]
-            // Code cũ đoạn này ok, tôi không paste lại cho đỡ dài
-            return "TOKEN_PLACEHOLDER"; // Bạn thay lại bằng logic cũ nhé
+            var secretKey = _configuration["Jwt:Key"];
+            var issuer = _configuration["Jwt:Issuer"];
+            var audience = _configuration["Jwt:Audience"];
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var claims = new List<Claim>
+            {
+                new Claim("UserID", user.Userid),
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim("StudentID", user.Student?.Studentid ?? "")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                expires: DateTime.Now.AddHours(4),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
 }
